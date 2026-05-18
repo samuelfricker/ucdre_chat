@@ -1,11 +1,12 @@
-from flask import Flask, render_template
-from flask_socketio import SocketIO
+from flask import Flask, render_template, request
+from flask_socketio import SocketIO, emit
+import os
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'dein-geheimes-schlüssel'  # Ersetze durch einen sicheren Schlüssel
-socketio = SocketIO(app, cors_allowed_origins="*")  # Erlaube alle Ursprünge (für die Entwicklung)
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'fallback-schlüssel-für-lokale-tests')
 
-# Rest des Codes bleibt gleich
+# Socket.IO mit gevent als async_mode
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent')
 
 # In-memory message store
 messages = []
@@ -48,4 +49,4 @@ def handle_message(data):
     emit('new_message', message, broadcast=True)
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True)
+    socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
