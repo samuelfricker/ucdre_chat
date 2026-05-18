@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Klassenraumchat (MVP)</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div id="startScreen" class="start-screen">
+        <h1>Klassenraumchat</h1>
+        <input type="text" id="usernameInput" placeholder="Dein Name" maxlength="20" />
+        <p id="nameError" class="error-message"></p>
+        <button id="joinButton">Beitreten</button>
+    </div>
+
+    <div id="chatContainer" class="chat-container" style="display: none;">
+        <div class="chat-header">
+            <h2>Klassenraumchat</h2>
+        </div>
+        <div class="chat-messages" id="chatMessages"></div>
+        <div class="chat-input">
+            <input type="text" id="messageInput" placeholder="Nachricht eingeben..." />
+            <button id="emojiButton">😊</button>
+            <div id="emojiMenu" class="emoji-menu">
+                <button class="emoji-option" data-emoji="😊">😊</button>
+                <button class="emoji-option" data-emoji="👍">👍</button>
+                <button class="emoji-option" data-emoji="❤️">❤️</button>
+                <button class="emoji-option" data-emoji="🔥">🔥</button>
+                <button class="emoji-option" data-emoji="🎉">🎉</button>
+                <button class="emoji-option" data-emoji="✅">✅</button>
+                <button class="emoji-option" data-emoji="❌">❌</button>
+                <button class="emoji-option" data-emoji="💡">💡</button>
+                <button class="emoji-option" data-emoji="🙏">🙏</button>
+                <button class="emoji-option" data-emoji="🚀">🚀</button>
+            </div>
+            <button id="sendButton" disabled>Senden</button>
+            <button id="leaveButton">Verlassen</button>
+        </div>
+        <div class="participants-panel">
+            <h4>Teilnehmer (<span id="participantCount">0</span>)</h4>
+            <ul id="participantsUl"></ul>
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+        const socket = io();
+        let currentUser = null;
+        let participants = new Set();
+
+        // DOM-Elemente
+        const startScreen = document.getElementById('startScreen');
+        const chatContainer = document.getElementById('chatContainer');
+        const usernameInput = document.getElementById('usernameInput');
+        const nameError = document.getElementById('nameError');
+        const joinButton = document.getElementById('joinButton');
+        const messageInput = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+        const leaveButton = document.getElementById('leaveButton');
+        const chatMessages = document.getElementById('chatMessages');
+        const emojiButton = document.getElementById('emojiButton');
+        const emojiMenu = document.getElementById('emojiMenu');
+        const participantsUl = document.getElementById('participantsUl');
+        const participantCount = document.getElementById('participantCount');
+
+        // Emoji-Menü anzeigen/verstecken
+        emojiButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            emojiMenu.classList.toggle('show');
+        });
+
+        // Emoji auswählen
+        document.querySelectorAll('.emoji-option').forEach(button => {
+            button.addEventListener('click', () => {
+                const emoji = button.dataset.emoji;
+                messageInput.value += emoji;
+                emojiMenu.classList.remove('show');
+                messageInput.focus();
+            });
+        });
+
+        // Emoji-Menü schließen, wenn außerhalb geklickt wird
+        document.addEventListener('click', (e) => {
+            if (!emojiButton.contains(e.target) && !emojiMenu.contains(e.target)) {
+                emojiMenu.classList.remove('show');
+            }
+        });
+
+        // Beitreten-Button
+        joinButton.addEventListener('click', () => {
+            const username = usernameInput.value.trim();
+            if (username.length < 3 || username.length > 20) {
+                nameError.textContent = 'Der Name muss zwischen 3 und 20 Zeichen lang sein.';
+                return;
+            }
+            if (!/^[a-zA-Z0-9äöüÄÖÜ\s-]+$/.test(username)) {
+                nameError.textContent = 'Der Name darf nur Buchstaben, Zahlen, Leerzeichen und Bindestriche enthalten.';
+                return;
+            }
+            nameError.textContent = '';
+            currentUser = username;
+            startScreen.style.display = 'none';
+            chatContainer.style.display = 'flex';
+            socket.emit('join', { username });
+            messageInput.focus();
+        });
+
+        // Senden-Button
+        sendButton.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+
+        function sendMessage() {
+            const text = messageInput.value.trim();
+            if (text && currentUser) {
+                const timestamp = new Date().toISOString();
+                socket.emit('send_message', {
+                    sender: currentUser,
+                    text: text,
+                    timestamp: timestamp
+                });
+                messageInput.value = '';
+            }
+        }
+
+        // Verlassen-Button
+        leaveButton.addEventListener('click', () => {
+            socket.emit('leave', { username: currentUser });
+            startScreen.style.display = 'block';
+            chatContainer.style.display = 'none';
+            currentUser = null;
+        });
+
+        // Socket.IO-Events
+        socket.on('user_joined', (data) => {
+            addSystemMessage(`${data.username} ist beigetreten.`);
+        });
+
+        socket.on('user_left', (data) => {
+            addSystemMessage(`${data.username} hat den Chat verlassen.`);
+        });
+
+        socket.on('new_message', (message) => {
+            addMessage(message.sender, message.text, new Date(message.timestamp));
+        });
+
+        socket.on('update_participants', (data) => {
+            participants = new Set(data.participants);
+            updateParticipantsList();
+        });
+
+        // Nachrichten zur UI hinzufügen
+        function addMessage(sender, text, timestamp) {
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message');
+            if (sender === currentUser) {
+                messageDiv.classList.add('own-message');
+            }
+
+            const messageInfo = document.createElement('div');
+            messageInfo.classList.add('message-info');
+            messageInfo.textContent = `${sender} • ${formatTime(timestamp)}`;
+
+            const messageText = document.createElement('div');
+            messageText.classList.add('message-text');
+            messageText.textContent = text;
+
+            messageDiv.appendChild(messageInfo);
+            messageDiv.appendChild(messageText);
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Systemnachrichten zur UI hinzufügen
+        function addSystemMessage(text) {
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('system-message');
+            messageDiv.textContent = text;
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // Teilnehmerliste aktualisieren
+        function updateParticipantsList() {
+            participantsUl.innerHTML = '';
+            participants.forEach(participant => {
+                const li = document.createElement('li');
+                li.textContent = participant;
+                participantsUl.appendChild(li);
+            });
+            participantCount.textContent = participants.size;
+        }
+
+        // Zeit formatieren
+        function formatTime(date) {
+            return date.toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        // Senden-Button aktivieren/deaktivieren
+        messageInput.addEventListener('input', () => {
+            sendButton.disabled = messageInput.value.trim() === '';
+        });
+    </script>
+</body>
+</html>
