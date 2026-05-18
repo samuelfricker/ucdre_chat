@@ -1,8 +1,11 @@
-from flask import Flask, render_template, request, jsonify
-from flask_socketio import SocketIO, emit
+from flask import Flask, render_template
+from flask_socketio import SocketIO
 
 app = Flask(__name__)
-socketio = SocketIO(app)
+app.config['SECRET_KEY'] = 'dein-geheimes-schlüssel'  # Ersetze durch einen sicheren Schlüssel
+socketio = SocketIO(app, cors_allowed_origins="*")  # Erlaube alle Ursprünge (für die Entwicklung)
+
+# Rest des Codes bleibt gleich
 
 # In-memory message store
 messages = []
